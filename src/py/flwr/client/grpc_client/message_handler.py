@@ -21,6 +21,8 @@ from flwr.client.client import Client
 from flwr.common import serde
 from flwr.proto.transport_pb2 import ClientMessage, Reason, ServerMessage
 
+from flwr.server.server import Server
+
 # pylint: disable=missing-function-docstring
 
 
@@ -40,6 +42,17 @@ def handle(
         return _fit(client, server_msg.fit_ins), 0, True
     if server_msg.HasField("evaluate_ins"):
         return _evaluate(client, server_msg.evaluate_ins), 0, True
+    if server_msg.HasField("sec_agg_msg"):
+        if server_msg.sec_agg_msg.HasField("setup_param"):
+            return _setup_param(client, server_msg.sec_agg_msg), 0, True
+        elif server_msg.sec_agg_msg.HasField("ask_keys"):
+            return _ask_keys(client, server_msg.sec_agg_msg), 0, True
+        elif server_msg.sec_agg_msg.HasField("share_keys"):
+            return _share_keys(client, server_msg.sec_agg_msg), 0, True
+        elif server_msg.sec_agg_msg.HasField("ask_vectors"):
+            return _ask_vectors(client, server_msg.sec_agg_msg), 0, True
+        elif server_msg.sec_agg_msg.HasField("unmask_vectors"):
+            return _unmask_vectors(client, server_msg.sec_agg_msg), 0, True
     raise UnkownServerMessage()
 
 
@@ -82,3 +95,61 @@ def _reconnect(
     # Build Disconnect message
     disconnect = ClientMessage.Disconnect(reason=reason)
     return ClientMessage(disconnect=disconnect), sleep_duration
+
+
+def _setup_param(client: Client, setup_param_msg: ServerMessage.SecAggMsg) -> ClientMessage:
+    try:
+        setup_param_ins = serde.setup_param_ins_from_proto(setup_param_msg)
+        setup_param_res = client.setup_param(setup_param_ins)
+        setup_param_res_proto = serde.setup_param_res_to_proto(setup_param_res)
+        return ClientMessage(sec_agg_res=setup_param_res_proto)
+    except Exception as e:
+        return _error_res(e)
+
+
+def _ask_keys(client: Client, ask_keys_msg: ServerMessage.SecAggMsg) -> ClientMessage:
+    try:
+        ask_keys_ins = serde.ask_keys_ins_from_proto(ask_keys_msg)
+        ask_keys_res = client.ask_keys(ask_keys_ins)
+        ask_keys_res_proto = serde.ask_keys_res_to_proto(ask_keys_res)
+        return ClientMessage(sec_agg_res=ask_keys_res_proto)
+    except Exception as e:
+        return _error_res(e)
+
+
+def _share_keys(client: Client, share_keys_msg: ServerMessage.SecAggMsg) -> ClientMessage:
+    try:
+        share_keys_in = serde.share_keys_ins_from_proto(share_keys_msg)
+        share_keys_res = client.share_keys(share_keys_in)
+        share_keys_res_proto = serde.share_keys_res_to_proto(share_keys_res)
+        return ClientMessage(sec_agg_res=share_keys_res_proto)
+    except Exception as e:
+        return _error_res(e)
+
+
+def _ask_vectors(client: Client, ask_vectors_msg: ServerMessage.SecAggMsg) -> ClientMessage:
+    try:
+        ask_vectors_ins = serde.ask_vectors_ins_from_proto(ask_vectors_msg)
+        ask_vectors_res = client.ask_vectors(ask_vectors_ins)
+        ask_vectors_res_proto = serde.ask_vectors_res_to_proto(ask_vectors_res)
+        return ClientMessage(sec_agg_res=ask_vectors_res_proto)
+    except Exception as e:
+        return _error_res(e)
+
+
+def _unmask_vectors(client: Client, unmask_vectors_msg: ServerMessage.SecAggMsg) -> ClientMessage:
+    try:
+        unmask_vectors_ins = serde.unmask_vectors_ins_from_proto(unmask_vectors_msg)
+        unmask_vectors_res = client.unmask_vectors(
+            unmask_vectors_ins)
+        unmask_vectors_res_proto = serde.unmask_vectors_res_to_proto(unmask_vectors_res)
+        return ClientMessage(sec_agg_res=unmask_vectors_res_proto)
+    except Exception as e:
+        return _error_res(e)
+
+
+def _error_res(e: Exception) -> ClientMessage:
+    error_res = ClientMessage.SecAggRes(
+        error_res=ClientMessage.SecAggRes.ErrorRes(error=e.args[0])
+    )
+    return ClientMessage(sec_agg_res=error_res)

@@ -44,12 +44,50 @@ message ServerMessage {
     Parameters parameters = 1;
     map<string, Scalar> config = 2;
   }
-
+  message SecAggMsg{
+    message SetupParam{
+      map<string, Scalar> sec_agg_param_dict = 1;
+    }
+    message AskKeys{}
+    message ShareKeys{
+      message KeysPair{
+        bytes pk1=1;
+        bytes pk2=2;
+      }
+      map<int64, KeysPair> public_keys_dict=1;
+    }
+    message AskVectors{
+      message Packet{
+        int64 source=1;
+        int64 destination=2;
+        bytes ciphertext=3;
+      }
+      message FitIns {
+        Parameters parameters = 1;
+        map<string, Scalar> config = 2;
+      }
+      repeated Packet packet_list=1;
+      FitIns fit_ins=2;
+    }
+    message UnmaskVectors{
+      repeated int64 available_clients=1;
+      repeated int64 dropout_clients=2;
+    }
+    oneof msg{
+      SetupParam setup_param=1;
+      AskKeys ask_keys=2;
+      ShareKeys share_keys=3;
+      AskVectors ask_vectors=4;
+      UnmaskVectors unmask_vectors=5;
+    }
+    
+  }
   oneof msg {
     Reconnect reconnect = 1;
     GetParameters get_parameters = 2;
     FitIns fit_ins = 3;
     EvaluateIns evaluate_ins = 4;
+    SecAggMsg sec_agg_msg=5;
   }
 }
 
@@ -69,12 +107,47 @@ message ClientMessage {
     float accuracy = 3 [ deprecated = true ];
     map<string, Scalar> metrics = 4;
   }
+  message SecAggRes{
+    message SetupParamRes{}
+    message AskKeysRes{
+        bytes pk1=1;
+        bytes pk2=2;
+    }
+    message ShareKeysRes{
+      message Packet{
+        int64 source=1;
+        int64 destination=2;
+        bytes ciphertext=3;
+      }
+      repeated Packet packet_list=1;
+    }
+    message AskVectorsRes{
+      Parameters parameters = 1;
+    }
+    message UnmaskVectorsRes{
+      map<int64,bytes> share_dict=1;
+    }
+    message ErrorRes{
+      string error=1;
+    }
+    oneof msg{
+      SetupParamRes setup_param_res=1;
+      AskKeysRes ask_keys_res=2;
+      ShareKeysRes share_keys_res=3;
+      AskVectorsRes ask_vectors_res=4;
+      UnmaskVectorsRes unmask_vectors_res=5;
+      ErrorRes error_res=6;
+    }
+  }
+  
+
 
   oneof msg {
     Disconnect disconnect = 1;
     ParametersRes parameters_res = 2;
     FitRes fit_res = 3;
     EvaluateRes evaluate_res = 4;
+    SecAggRes sec_agg_res =5 ;
   }
 }
 

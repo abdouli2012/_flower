@@ -23,6 +23,8 @@ from .fedadam import FedAdam as FedAdam
 from .fedavg import FedAvg as FedAvg
 from .fedfs_v0 import FedFSv0 as FedFSv0
 from .fedfs_v1 import FedFSv1 as FedFSv1
+from .sec_agg_fedavg import SecAggFedAvg as SecAggFedAvg
+from .sec_agg_strategy import SecAggStrategy as SecAggStrategy
 from .fedyogi import FedYogi as FedYogi
 from .qfedavg import QFedAvg as QFedAvg
 from .qfedavg import QffedAvg as QffedAvg  # Deprecated
@@ -41,4 +43,6 @@ __all__ = [
     "QFedAvg",
     "QffedAvg",  # Deprecated
     "Strategy",
+    "SecAggStrategy",
+    "SecAggFedAvg"
 ]

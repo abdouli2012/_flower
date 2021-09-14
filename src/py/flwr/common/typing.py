@@ -95,3 +95,65 @@ class Disconnect:
     """Disconnect message from client to server."""
 
     reason: str
+
+
+@dataclass
+class SetupParamIns:
+    sec_agg_param_dict: Dict[str, Scalar]
+
+
+@dataclass
+class SetupParamRes:
+    pass
+
+
+@dataclass
+class AskKeysIns:
+    pass
+
+
+@dataclass
+class AskKeysRes:
+    """Ask Keys Stage Response from client to server"""
+
+    pk1: bytes
+    pk2: bytes
+
+
+@dataclass
+class ShareKeysIns:
+    public_keys_dict: Dict[int, AskKeysRes]
+
+
+@dataclass
+class ShareKeysPacket:
+    source: int
+    destination: int
+    ciphertext: bytes
+
+
+@dataclass
+class ShareKeysRes:
+    share_keys_res_list: List[ShareKeysPacket]
+
+
+@dataclass
+class AskVectorsIns:
+    ask_vectors_in_list: List[ShareKeysPacket]
+    fit_ins: FitIns
+
+
+@dataclass
+class AskVectorsRes:
+    parameters: Parameters
+
+
+@dataclass
+class UnmaskVectorsIns:
+    available_clients: List[int]
+    dropout_clients: List[int]
+
+
+@dataclass
+class UnmaskVectorsRes:
+    share_dict: Dict[int, bytes]

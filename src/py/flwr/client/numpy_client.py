@@ -15,6 +15,7 @@
 """Flower client app."""
 
 
+from logging import exception
 import timeit
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Tuple, Union, cast
@@ -26,6 +27,7 @@ from flwr.common import (
     EvaluateRes,
     FitIns,
     FitRes,
+    AskKeysRes,
     Metrics,
     ParametersRes,
     Scalar,

@@ -16,9 +16,12 @@
 
 
 import concurrent.futures
+from pickle import LIST
 import timeit
-from logging import DEBUG, INFO, WARNING
+from logging import DEBUG, INFO, WARN, WARNING
 from typing import Dict, List, Optional, Tuple, Union
+
+import numpy as np
 
 from flwr.common import (
     Disconnect,
@@ -33,10 +36,14 @@ from flwr.common import (
     weights_to_parameters,
 )
 from flwr.common.logger import log
+from flwr.common.parameter import parameters_to_weights
+from flwr.common.sec_agg import sec_agg_server_logic
 from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy
 from flwr.server.history import History
-from flwr.server.strategy import FedAvg, Strategy
+from flwr.server.strategy import Strategy, FedAvg
+from flwr.common.typing import AskKeysIns, AskKeysRes, AskVectorsIns, AskVectorsRes, SetupParamIns, SetupParamRes, ShareKeysIns, ShareKeysPacket, ShareKeysRes, UnmaskVectorsIns, UnmaskVectorsRes
+from flwr.server.strategy.sec_agg_strategy import SecAggStrategy
 
 DEPRECATION_WARNING_EVALUATE = """
 DEPRECATION WARNING: Method
@@ -110,7 +117,7 @@ class Server:
         return self._client_manager
 
     # pylint: disable=too-many-locals
-    def fit(self, num_rounds: int) -> History:
+    def fit(self, num_rounds: int, sec_agg: int) -> History:
         """Run federated averaging for a number of rounds."""
         history = History()
 
@@ -135,11 +142,24 @@ class Server:
 
         for current_round in range(1, num_rounds + 1):
             # Train model and replace previous global model
-            res_fit = self.fit_round(rnd=current_round)
-            if res_fit:
-                parameters_prime, _, _ = res_fit  # fit_metrics_aggregated
-                if parameters_prime:
-                    self.parameters = parameters_prime
+            if sec_agg == 1:
+                # Check is strategy compatible with sec_agg
+                if not isinstance(self.strategy, SecAggStrategy):
+                    raise Exception("Strategy not compatible with secure aggregation")
+
+                res_fit = sec_agg_server_logic.sec_agg_fit_round(
+                    self, rnd=current_round)
+
+                if res_fit:
+                    parameters_prime, _, _ = res_fit  # fit_metrics_aggregated
+                    if parameters_prime:
+                        self.parameters = parameters_prime
+            else:
+                res_fit = self.fit_round(rnd=current_round)
+                if res_fit:
+                    parameters_prime, _, _ = res_fit  # fit_metrics_aggregated
+                    if parameters_prime:
+                        self.parameters = parameters_prime
 
             # Evaluate model using strategy implementation
             res_cen = self.strategy.evaluate(parameters=self.parameters)
