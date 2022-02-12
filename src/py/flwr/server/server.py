@@ -334,25 +334,53 @@ class Server:
 def reconnect_clients(
     client_instructions: List[Tuple[ClientProxy, Reconnect]],
     max_workers: Optional[int],
+    round_timeout: Optional[float] = None,
 ) -> ReconnectResultsAndFailures:
     """Instruct clients to disconnect and never reconnect."""
+
+    # Execute instructions on all selected clients and gather results as they arrive
+    start_time = timeit.default_timer()
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        submitted_fs = [
-            executor.submit(reconnect_client, client_proxy, ins)
-            for client_proxy, ins in client_instructions
-        ]
-        concurrent.futures.wait(submitted_fs)
+        # Full type is `Set[Future[Tuple[ClientProxy, Disconnect]]]`
+        # (Future is not generic before Python 3.9)
+        submitted_fs = {
+            executor.submit(reconnect_client, cp, ins)
+            for cp, ins in client_instructions
+        }
+        finished_fs = set()
+        try:
+            for future in concurrent.futures.as_completed(submitted_fs, round_timeout):
+                finished_fs.add(future)
+            elapsed = timeit.default_timer() - start_time
+            log(
+                INFO,
+                "All clients returned results within %ss (timeout %s)",
+                elapsed,
+                round_timeout,
+            )
+        except concurrent.futures.TimeoutError:
+            log(
+                INFO,
+                "Round timeout (%ss) reached, %s (out of %s) clients returned results",
+                round_timeout,
+                len(finished_fs),
+                len(submitted_fs),
+            )
+    unfinished_fs = submitted_fs - finished_fs
 
     # Gather results
     results: List[Tuple[ClientProxy, Disconnect]] = []
     failures: List[BaseException] = []
-    for future in submitted_fs:
+    for future in finished_fs:
         failure = future.exception()
         if failure is not None:
             failures.append(failure)
         else:
             result = future.result()
             results.append(result)
+    for future in unfinished_fs:
+        failures.append(TimeoutError())
+
     return results, failures
 
 
@@ -368,19 +396,43 @@ def reconnect_client(
 def fit_clients(
     client_instructions: List[Tuple[ClientProxy, FitIns]],
     max_workers: Optional[int],
+    round_timeout: Optional[float] = None,
 ) -> FitResultsAndFailures:
     """Refine parameters concurrently on all selected clients."""
+
+    # Execute instructions on all selected clients and gather results as they arrive
+    start_time = timeit.default_timer()
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        submitted_fs = [
-            executor.submit(fit_client, client_proxy, ins)
-            for client_proxy, ins in client_instructions
-        ]
-        concurrent.futures.wait(submitted_fs)
+        # Full type is `Set[Future[Tuple[ClientProxy, FitRes]]]`
+        # (Future is not generic before Python 3.9)
+        submitted_fs = {
+            executor.submit(fit_client, cp, ins) for cp, ins in client_instructions
+        }
+        finished_fs = set()
+        try:
+            for future in concurrent.futures.as_completed(submitted_fs, round_timeout):
+                finished_fs.add(future)
+            elapsed = timeit.default_timer() - start_time
+            log(
+                INFO,
+                "All clients returned results within %ss (timeout %s)",
+                elapsed,
+                round_timeout,
+            )
+        except concurrent.futures.TimeoutError:
+            log(
+                INFO,
+                "Round timeout (%ss) reached, %s (out of %s) clients returned results",
+                round_timeout,
+                len(finished_fs),
+                len(submitted_fs),
+            )
+    unfinished_fs = submitted_fs - finished_fs
 
     # Gather results
     results: List[Tuple[ClientProxy, FitRes]] = []
     failures: List[BaseException] = []
-    for future in submitted_fs:
+    for future in finished_fs:
         failure = future.exception()
         if failure is not None:
             failures.append(failure)
@@ -388,6 +440,9 @@ def fit_clients(
             # Success case
             result = future.result()
             results.append(result)
+    for future in unfinished_fs:
+        failures.append(TimeoutError())
+
     return results, failures
 
 
@@ -400,19 +455,43 @@ def fit_client(client: ClientProxy, ins: FitIns) -> Tuple[ClientProxy, FitRes]:
 def evaluate_clients(
     client_instructions: List[Tuple[ClientProxy, EvaluateIns]],
     max_workers: Optional[int],
+    round_timeout: Optional[float] = None,
 ) -> EvaluateResultsAndFailures:
     """Evaluate parameters concurrently on all selected clients."""
+
+    # Execute instructions on all selected clients and gather results as they arrive
+    start_time = timeit.default_timer()
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        submitted_fs = [
-            executor.submit(evaluate_client, client_proxy, ins)
-            for client_proxy, ins in client_instructions
-        ]
-        concurrent.futures.wait(submitted_fs)
+        # Full type is `Set[Future[Tuple[ClientProxy, EvaluateRes]]]`
+        # (Future is not generic before Python 3.9)
+        submitted_fs = {
+            executor.submit(evaluate_client, cp, ins) for cp, ins in client_instructions
+        }
+        finished_fs = set()
+        try:
+            for future in concurrent.futures.as_completed(submitted_fs, round_timeout):
+                finished_fs.add(future)
+            elapsed = timeit.default_timer() - start_time
+            log(
+                INFO,
+                "All clients returned results within %ss (timeout %s)",
+                elapsed,
+                round_timeout,
+            )
+        except concurrent.futures.TimeoutError:
+            log(
+                INFO,
+                "Round timeout (%ss) reached, %s (out of %s) clients returned results",
+                round_timeout,
+                len(finished_fs),
+                len(submitted_fs),
+            )
+    unfinished_fs = submitted_fs - finished_fs
 
     # Gather results
     results: List[Tuple[ClientProxy, EvaluateRes]] = []
     failures: List[BaseException] = []
-    for future in submitted_fs:
+    for future in finished_fs:
         failure = future.exception()
         if failure is not None:
             failures.append(failure)
@@ -420,6 +499,9 @@ def evaluate_clients(
             # Success case
             result = future.result()
             results.append(result)
+    for future in unfinished_fs:
+        failures.append(TimeoutError())
+
     return results, failures
 
 
