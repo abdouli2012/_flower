@@ -24,6 +24,7 @@ import ray
 from flwr.client.client import Client
 from flwr.common.logger import log
 from flwr.server.app import _fl, _init_defaults
+from flwr.server.client_manager import ClientManager
 from flwr.server.history import History
 from flwr.server.strategy import Strategy
 from flwr.simulation.ray_transport.ray_client_proxy import RayClientProxy
@@ -42,6 +43,7 @@ Invalid Arguments in method:
     num_rounds: int = 1,
     strategy: Optional[Strategy] = None,
     ray_init_args: Optional[Dict[str, Any]] = None,
+    client_manager: Optional[ClientManager] = None,
 ) -> None:`
 
 REASON:
@@ -63,6 +65,7 @@ def start_simulation(  # pylint: disable=too-many-arguments
     num_rounds: int = 1,
     strategy: Optional[Strategy] = None,
     ray_init_args: Optional[Dict[str, Any]] = None,
+    client_manager: Optional[ClientManager] = None,
 ) -> History:
     """Start a Ray-based Flower simulation server.
 
@@ -108,6 +111,10 @@ def start_simulation(  # pylint: disable=too-many-arguments
 
         An empty dictionary can be used (ray_init_args={}) to prevent any
         arguments from being passed to ray.init.
+    client_manager : Optional[flwr.server.client_manager.ClientManager] (default: None)
+        An implementation of the abstract base class `ClientManager`. If
+        no client_manager is provided, then `start_server` will use
+        `flwr.server.strategy.SimpleClientManager`.
 
     Returns:
         hist: flwr.server.history.History. Object containing metrics from training.
@@ -149,7 +156,9 @@ def start_simulation(  # pylint: disable=too-many-arguments
 
     # Initialize server and server config
     config = {"num_rounds": num_rounds}
-    initialized_server, initialized_config = _init_defaults(None, config, strategy)
+    initialized_server, initialized_config = _init_defaults(
+        None, config, strategy, client_manager
+    )
     log(
         INFO,
         "Starting Flower simulation running: %s",
