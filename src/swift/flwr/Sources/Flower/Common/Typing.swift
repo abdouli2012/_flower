@@ -173,6 +173,15 @@ public struct Parameters: Equatable {
     }
 }
 
+/// Parameters request for a client.
+public struct GetParametersIns: Equatable {
+    public var config: [String: Scalar]
+    
+    public init(config: [String : Scalar]) {
+        self.config = config
+    }
+}
+
 /// Response when asked to return parameters.
 public struct GetParametersRes: Equatable {
     public var parameters: Parameters

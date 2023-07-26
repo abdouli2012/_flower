@@ -24,7 +24,7 @@ public enum MLTask {
 /// ### Usage
 ///
 /// - ``init(layerWrappers:dataLoader:compiledModelUrl:)``
-/// - ``getParameters()``
+/// - ``getParameters(ins:)``
 /// - ``getProperties(ins:)``
 /// - ``fit(ins:)``
 /// - ``evaluate(ins:)``
@@ -84,7 +84,7 @@ public class MLFlwrClient: Client {
     /// Parses the parameters from the local model and returns them as GetParametersRes struct.
     ///
     /// - Returns: Parameters from the local model
-    public func getParameters() -> GetParametersRes {
+    public func getParameters(ins: GetParametersIns) -> GetParametersRes {
         let parameters = parameters.weightsToParameters()
         let status = Status(code: .ok, message: String())
         
