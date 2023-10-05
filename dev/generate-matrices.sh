@@ -18,17 +18,4 @@
 set -e
 cd "$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"/../
 
-# Regenerate pyproject.toml files for examples in case they changed
-echo "Regenerate pyproject.toml files in case they changed"
-./dev/generate-requirements-txt.sh $1
-
-# Fail if user forgot to sync requirements.txt and pyproject.toml
-CHANGED=$(git diff --name-only HEAD examples)
-
-if [ -n "$CHANGED" ]; then
-    echo "Changes detected, requirements.txt and pyproject.toml is not synced. Please run the script dev/generate-requirements-txt."
-    exit 1
-fi
-
-echo "No changes detected"
-exit 0
+echo "matrix={\"include\":[$(find ./examples -type f -name 'pyproject.toml' -exec sh -c 'echo "{\"dir\":\"$(dirname "{}")\",\"name\":\"$(basename "$(dirname "{}")")\"},"' \; | tr -d '\n' | sed 's/,$//')]}" >> $GITHUB_OUTPUT

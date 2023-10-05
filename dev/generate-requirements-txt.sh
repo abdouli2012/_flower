@@ -18,9 +18,34 @@
 set -e
 cd "$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"/../
 
-# Purpose of this script is to regenerate requirements.txt
-for path in $(find ./examples -type f -name 'pyproject.toml' | sed -E 's|/[^/]+$||' |sort -u)
-do
-    echo -e "\nRunning pipreqs for example in ${path}"
-    pipreqs --mode 'compat' --force --ignore .venv,poetry.lock $path
-done
+# Purpose of this function is to regenerate pyproject.toml
+regenerate() 
+{
+    if [ -f "$1/requirements.txt" ]; then
+        cd $1 &&
+
+        sed -n '/\[tool.poetry.dependencies/q;p' pyproject.toml > pyproject.new.toml &&
+        echo -e '[tool.poetry.dependencies]\npython = ">=3.8,<3.11"' >> pyproject.new.toml &&
+        mv pyproject.new.toml pyproject.toml &&
+        rm -rf poetry.lock &&
+
+        echo -e "\nRunning poeareq for example in $1" &&
+        poeareq "requirements.txt" &&
+    
+        cd ../../
+    else 
+        echo "$1/requirements.txt does not exist."
+    fi 
+}
+
+if [ -z "$1" ]
+    then
+        echo -e "\nRegenerating all pyproject.toml"
+        for path in $(find ./examples -type f -name 'pyproject.toml' | sed -E 's|/[^/]+$||' |sort -u)
+        do
+            regenerate $path
+        done
+    else
+        echo -e "\nRegenerating pyproject.toml in $1"
+        regenerate $1
+fi
