@@ -10,6 +10,10 @@
 
 - **Update REST API to support create and delete nodes** ([#2283](https://github.com/adap/flower/pull/2283))
 
+- **Add new Diffusion model Federated Learning example using Diffusers and Flower** ([#2411](https://github.com/adap/flower/pull/2411))
+
+  Thanks to an initial contribution made by [Fiona Victoria](https://github.com/fionavictoria), Flower now offers an example of Federated Learning applied to Diffusion models.
+
 - **Update the C++ SDK** ([#2537](https://github/com/adap/flower/pull/2537), [#2528](https://github/com/adap/flower/pull/2528), [#2523](https://github.com/adap/flower/pull/2523), [#2522](https://github.com/adap/flower/pull/2522))
 
   Add gRPC request-response capability to the C++ SDK.
