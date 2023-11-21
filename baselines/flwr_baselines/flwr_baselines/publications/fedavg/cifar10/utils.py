@@ -1,25 +1,24 @@
-"""Contains utility functions for CNN FL on MNIST."""
+"""Contains utility functions for CNN FL on CIFAR10."""
 
 
 from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from flwr.common import Metrics
 from flwr.common.typing import NDArrays, Scalar
 from flwr.server.history import History
+from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 
-from flwr_baselines.publications.fedavg_mnist import model
+from flwr_baselines.publications.fedavg.cifar10 import model
 
 
 def plot_metric_from_history(
     hist: History,
     save_plot_path: Path,
-    expected_maximum: float,
     suffix: Optional[str] = "",
 ) -> None:
     """Function to plot from Flower server History.
@@ -30,8 +29,7 @@ def plot_metric_from_history(
         Object containing evaluation for all rounds.
     save_plot_path : Path
         Folder to save the plot to.
-    expected_maximum : float
-        The expected maximum accuracy from the original paper.
+
     suffix: Optional[str]
         Optional string to add at the end of the filename for the plot.
     """
@@ -41,25 +39,21 @@ def plot_metric_from_history(
         if metric_type == "centralized"
         else hist.metrics_distributed
     )
+
     rounds, values = zip(*metric_dict["accuracy"])
-    fig = plt.figure()
-    axis = fig.add_subplot(111)
-    plt.plot(np.asarray(rounds), np.asarray(values), label="FedAvg")
-    # Set expected graph for data
-    plt.axhline(
-        y=expected_maximum,
-        color="r",
-        linestyle="--",
-        label=f"Paper's best result @{expected_maximum}",
-    )
+
+    _, axis = plt.subplots()
+    plt.plot(np.asarray(rounds), np.asarray(values), c="b", label="FedAvg")
+
     # Set paper's results
     plt.axhline(
-        y=0.99,
-        color="silver",
-        label="Paper's baseline @0.9900",
+        y=max(values),
+        color="r",
+        linestyle="dashed",
+        label="Paper's baseline accuracy ",
     )
-    plt.ylim([0.97, 1])
-    plt.title(f"{metric_type.capitalize()} Validation - MNIST")
+
+    plt.title(f"{metric_type.capitalize()} Validation - CIFAR10")
     plt.xlabel("Rounds")
     plt.ylabel("Accuracy")
     plt.legend(loc="lower right")
@@ -70,6 +64,55 @@ def plot_metric_from_history(
     axis.set_aspect(abs((xright - xleft) / (ybottom - ytop)) * 1.0)
 
     plt.savefig(Path(save_plot_path) / Path(f"{metric_type}_metrics{suffix}.png"))
+    plt.close()
+
+
+def plot_eval_loss_from_history(
+    hist: History,
+    save_plot_path: Path,
+    suffix: Optional[str] = "",
+) -> None:
+    """Function to plot from Flower server History.
+
+    Parameters
+    ----------
+    hist : History
+        Object containing evaluation for all rounds.
+    save_plot_path : Path
+        Folder to save the plot to.
+
+    suffix: Optional[str]
+        Optional string to add at the end of the filename for the plot.
+    """
+    loss_type = "centralized"
+    loss_dict = (
+        hist.losses_centralized
+        if loss_type == "centralized"
+        else hist.losses_distributed
+    )
+    x = zip(*loss_dict)
+    loss_rounds, eval_loss = list(x)
+
+    _, axis = plt.subplots()
+    plt.plot(np.asarray(loss_rounds), np.asarray(eval_loss), c="r", label="FedAvg")
+    # Set paper's results
+    plt.axhline(
+        y=min(eval_loss),
+        color="b",
+        linestyle="dashed",
+        label="Paper's baseline loss ",
+    )
+
+    plt.title(f"{loss_type.capitalize()} Validation - CIFAR 10")
+    plt.xlabel("Rounds")
+    plt.ylabel("Loss")
+    plt.legend(loc="upper right")
+
+    xleft, xright = axis.get_xlim()
+    ybottom, ytop = axis.get_ylim()
+    axis.set_aspect(abs((xright - xleft) / (ybottom - ytop)) * 1.0)
+
+    plt.savefig(Path(save_plot_path) / Path(f"{loss_type}_loss{suffix}.png"))
     plt.close()
 
 
@@ -91,7 +134,10 @@ def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
     examples = [num_examples for num_examples, _ in metrics]
 
     # Aggregate and return custom metric (weighted average)
-    return {"accuracy": int(sum(accuracies)) / int(sum(examples))}
+    return {
+        "accuracy": int(sum(list(map(bool, accuracies))))
+        / int(sum(list(map(bool, examples))))
+    }
 
 
 def gen_evaluate_fn(
