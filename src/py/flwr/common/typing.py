@@ -17,10 +17,16 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
+import uuid
 
 import numpy as np
 import numpy.typing as npt
+
+from flwr.common.aws import BucketManager
+import json
+
+import zlib
 
 NDArray = npt.NDArray[Any]
 NDArrayInt = npt.NDArray[np.int_]
@@ -85,6 +91,72 @@ class Parameters:
 
     tensors: List[bytes]
     tensor_type: str
+    s3_object_key: Optional[uuid.UUID] = None
+
+
+    @property
+    def dimensions(self) -> List[int]:
+        return [len(x) for x in self.tensors]
+    
+    def compressed_tensor_bytes(self):
+        return zlib.compress(b''.join(self.tensors))
+
+    def upload_to_s3(self, bucket_manager: BucketManager):
+        # Parameter can only be uploaded once. This saves bandwidth if user attempts try to upload the same parameter object more than oncce
+
+        if self.s3_object_key is not None:
+            return
+
+        s3_object_key = uuid.uuid4()
+        body = self.compressed_tensor_bytes()
+        bucket_manager.bucket.put_object(
+            Key=str(s3_object_key),
+            Metadata=dict(
+                tensor_type=self.tensor_type,
+                dimensions=json.dumps(self.dimensions)
+            ),
+            Body=body
+        ).wait_until_exists()
+        self.s3_object_key = s3_object_key
+    
+    @staticmethod
+    def pull_from_s3(bucket_manager: BucketManager, id: uuid.UUID):
+        key = str(id)
+        result = bucket_manager.bucket.Object(key).get()
+        tensor_type = result["Metadata"]["tensor_type"]
+        dimensions = json.loads(result["Metadata"]["dimensions"])
+        compressed_tensors_bytes = result["Body"].read()
+
+        params = Parameters.from_bytes(
+            tensor_type,
+            compressed_tensors_bytes,
+            dimensions
+        )
+        params.s3_object_key = id
+
+        return params
+
+    @staticmethod
+    def from_bytes(
+        tensor_type: str,
+        compressed_tensors_bytes: bytes,
+        dimensions: List[int]
+    ):
+        tensors_bytes = zlib.decompress(compressed_tensors_bytes)
+        assert len(tensors_bytes) == sum(dimensions)
+
+        last_ptr = 0
+        tensors = []
+
+        for dim in dimensions:
+            tensors.append(tensors_bytes[last_ptr: last_ptr+dim])
+            last_ptr += dim
+        
+        return Parameters(
+            tensors=tensors,
+            tensor_type=tensor_type
+        )
+
 
 
 @dataclass
@@ -117,7 +189,7 @@ class FitRes:
     status: Status
     parameters: Parameters
     num_examples: int
-    metrics: Dict[str, Scalar]
+    metrics: Optional[Dict[str, Scalar]]
 
 
 @dataclass
@@ -135,7 +207,7 @@ class EvaluateRes:
     status: Status
     loss: float
     num_examples: int
-    metrics: Dict[str, Scalar]
+    metrics: Optional[Dict[str, Scalar]]
 
 
 @dataclass

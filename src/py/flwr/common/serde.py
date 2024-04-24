@@ -15,12 +15,13 @@
 """ProtoBuf serialization and deserialization."""
 
 
-from typing import Any, Dict, List, MutableMapping, OrderedDict, Type, TypeVar, cast
+from typing import Any, Dict, Iterator, List, MutableMapping, OrderedDict, Type, TypeVar, cast
 
 from google.protobuf.message import Message as GrpcMessage
 
 # pylint: disable=E0611
 from flwr.proto.error_pb2 import Error as ProtoError
+from flwr.common.grpc import GRPC_MAX_MESSAGE_LENGTH
 from flwr.proto.node_pb2 import Node
 from flwr.proto.recordset_pb2 import Array as ProtoArray
 from flwr.proto.recordset_pb2 import BoolList, BytesList
@@ -37,17 +38,58 @@ from flwr.proto.transport_pb2 import (
     ClientMessage,
     Code,
     Parameters,
+    ParametersStreamPacket,
     Reason,
     Scalar,
     ServerMessage,
     Status,
 )
 
+from typing import Optional
+from flwr.common.aws import BucketManager
 # pylint: enable=E0611
 from . import Array, ConfigsRecord, MetricsRecord, ParametersRecord, RecordSet, typing
 from .message import Error, Message, Metadata
 from .record.typeddict import TypedDict
 
+import uuid
+import itertools
+
+
+
+# === Chunked message utility ===
+
+def is_server_message_part_of_stream(msg: ServerMessage):
+    return msg.WhichOneof("msg") in ["evaluate_ins_stream"]
+
+def is_client_message_part_of_stream(msg: ClientMessage):
+    return msg.WhichOneof("msg") in ["fit_res_stream", "get_parameters_res_stream"]
+
+def _is_param_stream_end(msg: ParametersStreamPacket):
+    return msg.WhichOneof("stream") == "is_end"
+
+def is_server_message_end(msg: ServerMessage):
+    match msg.WhichOneof("msg"):
+        case "fit_ins_stream":
+            packet = msg.fit_ins_stream
+            return packet.WhichOneof("field") == "parameters" and _is_param_stream_end(packet.parameters)
+        case "evaluate_ins_stream":
+            packet = msg.evaluate_ins_stream
+            return packet.WhichOneof("field") == "parameters" and _is_param_stream_end(packet.parameters)
+        case _:
+            return True
+
+def is_client_message_end(msg: ClientMessage):
+    match msg.WhichOneof("msg"):
+        case "fit_res_stream":
+            packet = msg.fit_res_stream
+            return packet.WhichOneof("field") == "parameters" and _is_param_stream_end(packet.parameters)
+        case "get_parameters_res_stream":
+            packet = msg.get_parameters_res_stream
+            return packet.WhichOneof("field") == "parameters" and _is_param_stream_end(packet.parameters)
+        case _:
+            return True
+        
 #  === Parameters message ===
 
 
@@ -55,7 +97,58 @@ def parameters_to_proto(parameters: typing.Parameters) -> Parameters:
     """Serialize `Parameters` to ProtoBuf."""
     return Parameters(tensors=parameters.tensors, tensor_type=parameters.tensor_type)
 
+def _batched(iterable: bytes, n: int) -> Iterator[bytes]:
+    "Batch data into lists of length n. The last batch may be shorter."
+    it = iter(iterable)
+    while True:
+        batch = bytes(itertools.islice(it, n))
+        if not batch:
+            return
+        yield batch
 
+
+def parameters_to_proto_stream(parameters: typing.Parameters) -> Iterator[ParametersStreamPacket]:
+    if parameters.s3_object_key is not None:
+        header = ParametersStreamPacket.Header(
+            tensor_type=parameters.tensor_type,
+            dimensions=parameters.dimensions,
+            s3_object_key=str(parameters.s3_object_key)
+        )
+
+        yield ParametersStreamPacket(header=header)
+        return
+    
+    header = ParametersStreamPacket.Header(
+        tensor_type=parameters.tensor_type,
+        dimensions=parameters.dimensions
+    ) 
+    yield ParametersStreamPacket(header=header)
+    
+    for chunk in _batched(parameters.compressed_tensor_bytes(), GRPC_MAX_MESSAGE_LENGTH):
+        chunk = ParametersStreamPacket.Chunk(bytes=chunk)
+        yield ParametersStreamPacket(chunk=chunk)
+
+    yield ParametersStreamPacket(is_end=ParametersStreamPacket.END_OF_STREAM)
+
+
+def parameters_from_proto_stream(parameters: Iterator[ParametersStreamPacket], bucket_manager: Optional[BucketManager]) -> typing.Parameters:
+    header = next(parameters).header
+    if header.HasField('s3_object_key'):
+        assert bucket_manager is not None
+        return typing.Parameters.pull_from_s3(bucket_manager, uuid.UUID(header.s3_object_key))
+        
+    tensors_bytes = b''
+
+    while True:
+        packet = next(parameters)
+        if packet.WhichOneof("stream") == "chunk":
+            tensors_bytes += bytes(packet.chunk.bytes)
+
+        if packet.WhichOneof("stream") == "is_end":
+            break
+
+    return typing.Parameters.from_bytes(tensor_type=header.tensor_type, dimensions=list(header.dimensions), compressed_tensors_bytes=tensors_bytes,)
+     
 def parameters_from_proto(msg: Parameters) -> typing.Parameters:
     """Deserialize `Parameters` from ProtoBuf."""
     tensors: List[bytes] = list(msg.tensors)
@@ -117,6 +210,22 @@ def get_parameters_res_to_proto(
         status=status_msg, parameters=parameters_proto
     )
 
+def get_parameters_res_to_proto_stream(res: typing.GetParametersRes) -> Iterator[ClientMessage.GetParametersResStream]:
+    status_msg = status_to_proto(res.status)
+    if res.status.code == typing.Code.FIT_NOT_IMPLEMENTED:
+        header = ClientMessage.GetParametersResStream.Header(status=status_msg)
+        yield ClientMessage.GetParametersResStream(header=header)
+        return
+    
+    header = ClientMessage.GetParametersResStream.Header(
+        status=status_msg,
+    )
+
+    yield ClientMessage.GetParametersResStream(header=header)
+    for packet in parameters_to_proto_stream(res.parameters):
+        yield ClientMessage.GetParametersResStream(parameters=packet)
+
+
 
 def get_parameters_res_from_proto(
     msg: ClientMessage.GetParametersRes,
@@ -125,6 +234,27 @@ def get_parameters_res_from_proto(
     status = status_from_proto(msg=msg.status)
     parameters = parameters_from_proto(msg.parameters)
     return typing.GetParametersRes(status=status, parameters=parameters)
+
+
+def get_parameters_res_from_proto_stream(
+    msg_stream: Iterator[ClientMessage.GetParametersResStream],
+    bucket_manager: Optional[BucketManager]
+) -> typing.GetParametersRes:
+    """Deserialize `GetParametersRes` from ProtoBuf."""
+    msg = next(msg_stream)
+    assert msg.WhichOneof("field") == "header"
+    header = msg.header
+
+    def parse_param_chunk(msg: ClientMessage.GetParametersResStream):
+        assert msg.WhichOneof("field") == "parameters"
+        return msg.parameters
+    
+    parameters = parameters_from_proto_stream(map(parse_param_chunk, msg_stream), bucket_manager)
+
+    return typing.GetParametersRes(
+        status=status_from_proto(header.status),
+        parameters=parameters,
+    )
 
 
 # === Fit messages ===
@@ -137,11 +267,38 @@ def fit_ins_to_proto(ins: typing.FitIns) -> ServerMessage.FitIns:
     return ServerMessage.FitIns(parameters=parameters_proto, config=config_msg)
 
 
+def fit_ins_to_proto_stream(ins: typing.FitIns) -> Iterator[ServerMessage.FitInsStream]:
+    """Serialize `FitIns` to ProtoBuf."""
+    config_msg = metrics_to_proto(ins.config)
+    header = ServerMessage.FitInsStream.Header(config=config_msg)
+    yield ServerMessage.FitInsStream(header=header)
+    yield from map(lambda packet: ServerMessage.FitInsStream(parameters=packet), parameters_to_proto_stream(ins.parameters))
+
+
 def fit_ins_from_proto(msg: ServerMessage.FitIns) -> typing.FitIns:
     """Deserialize `FitIns` from ProtoBuf."""
     parameters = parameters_from_proto(msg.parameters)
     config = metrics_from_proto(msg.config)
     return typing.FitIns(parameters=parameters, config=config)
+
+
+def fit_res_to_proto_stream(res: typing.FitRes) -> Iterator[ClientMessage.FitResStream]:
+    status_msg = status_to_proto(res.status)
+    if res.status.code == typing.Code.FIT_NOT_IMPLEMENTED:
+        header = ClientMessage.FitResStream.Header(status=status_msg)
+        yield ClientMessage.FitResStream(header=header)
+        return
+    
+    metrics_msg = None if res.metrics is None else metrics_to_proto(res.metrics)
+    header = ClientMessage.FitResStream.Header(
+        status=status_msg,
+        num_examples=res.num_examples,
+        metrics=metrics_msg
+    )
+
+    yield ClientMessage.FitResStream(header=header)
+    for packet in parameters_to_proto_stream(res.parameters):
+        yield ClientMessage.FitResStream(parameters=packet)
 
 
 def fit_res_to_proto(res: typing.FitRes) -> ClientMessage.FitRes:
@@ -169,6 +326,26 @@ def fit_res_from_proto(msg: ClientMessage.FitRes) -> typing.FitRes:
         parameters=parameters,
         num_examples=msg.num_examples,
         metrics=metrics,
+    )
+
+
+def fit_res_from_proto_stream(msg_stream: Iterator[ClientMessage.FitResStream], bucket_manager: Optional[BucketManager]) -> typing.FitRes:
+    msg = next(msg_stream)
+    assert msg.WhichOneof("field") == "header"
+    header = msg.header
+
+    def parse_param_chunk(msg: ClientMessage.FitResStream):
+        assert msg.WhichOneof("field") == "parameters"
+        return msg.parameters
+    
+    parameters = parameters_from_proto_stream(map(parse_param_chunk, msg_stream), bucket_manager)
+    metrics = None if header.metrics is None else metrics_from_proto(header.metrics)
+
+    return typing.FitRes(
+        status=status_from_proto(header.status),
+        parameters=parameters,
+        num_examples=header.num_examples,
+        metrics=metrics
     )
 
 
@@ -221,11 +398,54 @@ def evaluate_ins_to_proto(ins: typing.EvaluateIns) -> ServerMessage.EvaluateIns:
     return ServerMessage.EvaluateIns(parameters=parameters_proto, config=config_msg)
 
 
+def evaluate_ins_to_proto_stream(ins: typing.EvaluateIns) -> Iterator[ServerMessage.EvaluateInsStream]:
+    """Serialize `EvaluateIns` to ProtoBuf stream."""
+    """ Prepare header """
+
+    config_msg = metrics_to_proto(ins.config)
+    header = ServerMessage.EvaluateInsStream.Header(config=config_msg)
+    yield ServerMessage.EvaluateInsStream(header=header)
+    yield from map(lambda packet: ServerMessage.EvaluateInsStream(parameters=packet), parameters_to_proto_stream(ins.parameters))
+
+
 def evaluate_ins_from_proto(msg: ServerMessage.EvaluateIns) -> typing.EvaluateIns:
     """Deserialize `EvaluateIns` from ProtoBuf."""
     parameters = parameters_from_proto(msg.parameters)
     config = metrics_from_proto(msg.config)
     return typing.EvaluateIns(parameters=parameters, config=config)
+
+
+
+def evaluate_ins_from_proto_stream(header_msg: ServerMessage.EvaluateInsStream, stream: Iterator[ServerMessage], bucket_manager: Optional[BucketManager]):
+    def _parse_parameter_packet(msg: ServerMessage) -> ParametersStreamPacket:
+        assert msg.WhichOneof("msg") == "evaluate_ins_stream"
+        assert msg.evaluate_ins_stream.WhichOneof("field") == "parameters"
+        return msg.evaluate_ins_stream.parameters
+
+    assert header_msg.WhichOneof("field") == "header"
+    config = metrics_from_proto(header_msg.header.config)
+    parameters = parameters_from_proto_stream(map(_parse_parameter_packet, stream), bucket_manager)
+
+    return typing.EvaluateIns(
+        parameters=parameters,
+        config=config     
+    )
+
+def fit_ins_from_proto_stream(header_msg: ServerMessage.FitInsStream, stream: Iterator[ServerMessage], bucket_manager: Optional[BucketManager]):
+    def _parse_parameter_packet(msg: ServerMessage) -> ParametersStreamPacket:
+        assert msg.WhichOneof("msg") == "fit_ins_stream"
+        assert msg.fit_ins_stream.WhichOneof("field") == "parameters"
+        return msg.fit_ins_stream.parameters
+
+    assert header_msg.WhichOneof("field") == "header"
+    config = metrics_from_proto(header_msg.header.config)
+    parameters = parameters_from_proto_stream(map(_parse_parameter_packet, stream), bucket_manager)
+
+    return typing.FitIns(
+        parameters=parameters,
+        config=config     
+    )
+    
 
 
 def evaluate_res_to_proto(res: typing.EvaluateRes) -> ClientMessage.EvaluateRes:

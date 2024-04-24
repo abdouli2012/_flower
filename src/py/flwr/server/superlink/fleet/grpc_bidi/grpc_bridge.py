@@ -25,20 +25,45 @@ from flwr.proto.transport_pb2 import (  # pylint: disable=E0611
     ServerMessage,
 )
 
-
 @dataclass
 class InsWrapper:
-    """Instruction wrapper class for a single server message."""
+    """Instruction wrapper class over the raw representation of server message.
+       A chunked message is represented as an iterator"""
 
-    server_message: ServerMessage
+    _packet: ServerMessage | Iterator[ServerMessage]
     timeout: Optional[float]
 
+    def __init__(self, packet: ServerMessage | Iterator[ServerMessage], timeout: Optional[float]):
+        self._packet = packet
+        self.timeout = timeout 
+
+    def is_stream(self) -> bool:
+        return isinstance(self._packet, Iterator) 
+
+    def raw_message_stream(self) -> Iterator[ServerMessage]:
+        if isinstance(self._packet, Iterator):
+            yield from self._packet
+        else:
+            yield self._packet
 
 @dataclass
 class ResWrapper:
     """Result wrapper class for a single client message."""
 
-    client_message: ClientMessage
+    _packet: Iterator[ClientMessage]
+
+    def __init__(self, packet: Iterator[ClientMessage]):
+        self._packet = packet
+
+    def is_stream(self) -> bool:
+        return isinstance(self._packet, Iterator)
+    
+    def raw_message_stream(self) -> Iterator[ClientMessage]:
+        yield from self._packet
+        
+
+    def raw_message_singular(self) -> ClientMessage:
+        return next(self._packet)
 
 
 class GrpcBridgeClosed(Exception):

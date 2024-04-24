@@ -36,6 +36,7 @@ from flwr.common.constant import MessageType, MessageTypeLegacy
 from flwr.common.grpc import create_channel
 from flwr.common.logger import log
 from flwr.common.retry_invoker import RetryInvoker
+from flwr.common.aws import BucketManager
 from flwr.proto.transport_pb2 import (  # pylint: disable=E0611
     ClientMessage,
     Reason,
@@ -62,6 +63,7 @@ def grpc_connection(  # pylint: disable=R0915
     retry_invoker: RetryInvoker,  # pylint: disable=unused-argument
     max_message_length: int = GRPC_MAX_MESSAGE_LENGTH,
     root_certificates: Optional[Union[bytes, str]] = None,
+    bucket_manager: Optional[BucketManager] = None,
 ) -> Iterator[
     Tuple[
         Callable[[], Optional[Message]],
@@ -161,6 +163,22 @@ def grpc_connection(  # pylint: disable=R0915
                 serde.evaluate_ins_from_proto(proto.evaluate_ins), False
             )
             message_type = MessageType.EVALUATE
+        elif field == "fit_ins_stream":
+            recordset = compat.fitins_to_recordset(
+                serde.fit_ins_from_proto_stream(
+                    proto.fit_ins_stream, server_message_iterator, bucket_manager
+                ),
+                False,
+            )
+            message_type = MessageType.TRAIN
+        elif field == "evaluate_ins_stream":
+            recordset = compat.evaluateins_to_recordset(
+                serde.evaluate_ins_from_proto_stream(
+                    proto.evaluate_ins_stream, server_message_iterator, bucket_manager
+                ),
+                False,
+            )
+            message_type = MessageType.EVALUATE
         elif field == "reconnect_ins":
             recordset = RecordSet()
             recordset.configs_records["config"] = ConfigsRecord(
@@ -197,16 +215,24 @@ def grpc_connection(  # pylint: disable=R0915
         if message_type == MessageTypeLegacy.GET_PROPERTIES:
             getpropres = compat.recordset_to_getpropertiesres(recordset)
             msg_proto = ClientMessage(
-                get_properties_res=serde.get_properties_res_to_proto(getpropres)
+                get_properties_res=serde.get_properties_res_to_proto(getpropres),
             )
         elif message_type == MessageTypeLegacy.GET_PARAMETERS:
             getparamres = compat.recordset_to_getparametersres(recordset, False)
-            msg_proto = ClientMessage(
-                get_parameters_res=serde.get_parameters_res_to_proto(getparamres)
+            if bucket_manager is not None:
+                getparamres.parameters.upload_to_s3(bucket_manager)
+            msg_proto = map(
+                lambda packet: ClientMessage(get_parameters_res_stream=packet),
+                serde.get_parameters_res_to_proto_stream(getparamres),
             )
         elif message_type == MessageType.TRAIN:
             fitres = compat.recordset_to_fitres(recordset, False)
-            msg_proto = ClientMessage(fit_res=serde.fit_res_to_proto(fitres))
+            if bucket_manager is not None:
+                fitres.parameters.upload_to_s3(bucket_manager)
+            msg_proto = map(
+                lambda packet: ClientMessage(fit_res_stream=packet),
+                serde.fit_res_to_proto_stream(fitres),
+            )
         elif message_type == MessageType.EVALUATE:
             evalres = compat.recordset_to_evaluateres(recordset)
             msg_proto = ClientMessage(evaluate_res=serde.evaluate_res_to_proto(evalres))
@@ -221,6 +247,11 @@ def grpc_connection(  # pylint: disable=R0915
             raise ValueError(f"Invalid message type: {message_type}")
 
         # Send ClientMessage proto
+        if isinstance(msg_proto, Iterator):
+            for msg in msg_proto:
+                queue.put(msg)
+            return
+
         return queue.put(msg_proto, block=False)
 
     try:

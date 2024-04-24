@@ -19,6 +19,7 @@ from typing import Optional
 
 from flwr import common
 from flwr.common import serde
+from flwr.common.aws import BucketManager
 from flwr.proto.transport_pb2 import (  # pylint: disable=E0611
     ClientMessage,
     ServerMessage,
@@ -38,9 +39,11 @@ class GrpcClientProxy(ClientProxy):
         self,
         cid: str,
         bridge: GrpcBridge,
+        bucket_manager: Optional[BucketManager] = None,
     ):
         super().__init__(cid)
         self.bridge = bridge
+        self.bucket_manager = bucket_manager
 
     def get_properties(
         self,
@@ -50,13 +53,10 @@ class GrpcClientProxy(ClientProxy):
     ) -> common.GetPropertiesRes:
         """Request client's set of internal properties."""
         get_properties_msg = serde.get_properties_ins_to_proto(ins)
-        res_wrapper: ResWrapper = self.bridge.request(
-            ins_wrapper=InsWrapper(
-                server_message=ServerMessage(get_properties_ins=get_properties_msg),
-                timeout=timeout,
-            )
-        )
-        client_msg: ClientMessage = res_wrapper.client_message
+        server_msg = ServerMessage(get_properties_ins=get_properties_msg)
+        ins_wrapper = InsWrapper(server_msg, timeout=timeout)
+        res_wrapper = self.bridge.request(ins_wrapper)
+        client_msg = res_wrapper.raw_message_singular()
         get_properties_res = serde.get_properties_res_from_proto(
             client_msg.get_properties_res
         )
@@ -70,15 +70,13 @@ class GrpcClientProxy(ClientProxy):
     ) -> common.GetParametersRes:
         """Return the current local model parameters."""
         get_parameters_msg = serde.get_parameters_ins_to_proto(ins)
-        res_wrapper: ResWrapper = self.bridge.request(
-            ins_wrapper=InsWrapper(
-                server_message=ServerMessage(get_parameters_ins=get_parameters_msg),
-                timeout=timeout,
-            )
-        )
-        client_msg: ClientMessage = res_wrapper.client_message
-        get_parameters_res = serde.get_parameters_res_from_proto(
-            client_msg.get_parameters_res
+        server_msg = ServerMessage(get_parameters_ins=get_parameters_msg)
+        ins_wrapper = InsWrapper(server_msg, timeout=timeout)
+        res_wrapper = self.bridge.request(ins_wrapper)
+        client_msg_stream = res_wrapper.raw_message_stream()
+        get_parameters_res = serde.get_parameters_res_from_proto_stream(
+            map(lambda msg: msg.get_parameters_res_stream, client_msg_stream),
+            self.bucket_manager,
         )
         return get_parameters_res
 
@@ -89,16 +87,16 @@ class GrpcClientProxy(ClientProxy):
         group_id: Optional[int],
     ) -> common.FitRes:
         """Refine the provided parameters using the locally held dataset."""
-        fit_ins_msg = serde.fit_ins_to_proto(ins)
-
-        res_wrapper: ResWrapper = self.bridge.request(
-            ins_wrapper=InsWrapper(
-                server_message=ServerMessage(fit_ins=fit_ins_msg),
-                timeout=timeout,
-            )
+        if self.bucket_manager is not None:
+            ins.parameters.upload_to_s3(self.bucket_manager)
+        fit_ins_msg = serde.fit_ins_to_proto_stream(ins)
+        server_msg = map(lambda msg: ServerMessage(fit_ins_stream=msg), fit_ins_msg)
+        ins_wrapper = InsWrapper(server_msg, timeout=timeout)
+        res_wrapper = self.bridge.request(ins_wrapper)
+        client_msg_stream = res_wrapper.raw_message_stream()
+        fit_res = serde.fit_res_from_proto_stream(
+            map(lambda msg: msg.fit_res_stream, client_msg_stream), self.bucket_manager
         )
-        client_msg: ClientMessage = res_wrapper.client_message
-        fit_res = serde.fit_res_from_proto(client_msg.fit_res)
         return fit_res
 
     def evaluate(
@@ -108,14 +106,16 @@ class GrpcClientProxy(ClientProxy):
         group_id: Optional[int],
     ) -> common.EvaluateRes:
         """Evaluate the provided parameters using the locally held dataset."""
-        evaluate_msg = serde.evaluate_ins_to_proto(ins)
-        res_wrapper: ResWrapper = self.bridge.request(
-            ins_wrapper=InsWrapper(
-                server_message=ServerMessage(evaluate_ins=evaluate_msg),
-                timeout=timeout,
-            )
+        if self.bucket_manager is not None:
+            ins.parameters.upload_to_s3(self.bucket_manager)
+        evaluate_msg = serde.evaluate_ins_to_proto_stream(ins)
+        server_msg = map(
+            lambda msg: ServerMessage(evaluate_ins_stream=msg),
+            evaluate_msg,
         )
-        client_msg: ClientMessage = res_wrapper.client_message
+        ins_wrapper = InsWrapper(server_msg, timeout)
+        res_wrapper = self.bridge.request(ins_wrapper)
+        client_msg: ClientMessage = res_wrapper.raw_message_singular()
         evaluate_res = serde.evaluate_res_from_proto(client_msg.evaluate_res)
         return evaluate_res
 
@@ -127,12 +127,9 @@ class GrpcClientProxy(ClientProxy):
     ) -> common.DisconnectRes:
         """Disconnect and (optionally) reconnect later."""
         reconnect_ins_msg = serde.reconnect_ins_to_proto(ins)
-        res_wrapper: ResWrapper = self.bridge.request(
-            ins_wrapper=InsWrapper(
-                server_message=ServerMessage(reconnect_ins=reconnect_ins_msg),
-                timeout=timeout,
-            )
-        )
-        client_msg: ClientMessage = res_wrapper.client_message
+        server_msg = ServerMessage(reconnect_ins=reconnect_ins_msg)
+        ins_wrapper = InsWrapper(server_msg, timeout)
+        res_wrapper = self.bridge.request(ins_wrapper)
+        client_msg = res_wrapper.raw_message_singular()
         disconnect = serde.disconnect_res_from_proto(client_msg.disconnect_res)
         return disconnect
