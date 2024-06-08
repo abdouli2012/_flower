@@ -24,7 +24,8 @@ import ray
 from ray import ObjectRef
 from ray.util.actor_pool import ActorPool
 
-from flwr.client.client_app import ClientApp, ClientAppException, LoadClientAppError
+from flwr.client.app import handle_app_loading_and_message
+from flwr.client.client_app import ClientApp
 from flwr.common import Context, Message
 from flwr.common.logger import log
 
@@ -50,18 +51,10 @@ class VirtualClientEngineActor(ABC):
         # Pass message through ClientApp and return a message
         # return also cid which is needed to ensure results
         # from the pool are correctly assigned to each ClientProxy
-        try:
-            # Load app
-            app: ClientApp = client_app_fn()
 
-            # Handle task message
-            out_message = app(message=message, context=context)
-
-        except LoadClientAppError as load_ex:
-            raise load_ex
-
-        except Exception as ex:
-            raise ClientAppException(str(ex)) from ex
+        out_message, context = handle_app_loading_and_message(
+            client_app_fn, message, context
+        )
 
         return cid, out_message, context
 
