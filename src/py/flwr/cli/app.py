@@ -18,6 +18,7 @@ import typer
 
 from .build import build
 from .example import example
+from .list_apps import list_apps
 from .new import new
 from .run import run
 
@@ -34,6 +35,7 @@ app.command()(new)
 app.command()(example)
 app.command()(run)
 app.command()(build)
+app.command()(list_apps)
 
 if __name__ == "__main__":
     app()
