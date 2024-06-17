@@ -17,16 +17,22 @@
 import sys
 from enum import Enum
 from logging import DEBUG
+from pathlib import Path
 from typing import Optional
 
 import typer
 from typing_extensions import Annotated
 
 from flwr.cli import config_utils
+from flwr.cli.build import build
+from flwr.common.config import get_flwr_dir
 from flwr.common.constant import SUPEREXEC_DEFAULT_ADDRESS
 from flwr.common.grpc import GRPC_MAX_MESSAGE_LENGTH, create_channel
 from flwr.common.logger import log
-from flwr.proto.exec_pb2 import StartRunRequest  # pylint: disable=E0611
+from flwr.proto.exec_pb2 import (  # pylint: disable=E0611
+    FetchLogsRequest,
+    StartRunRequest,
+)
 from flwr.proto.exec_pb2_grpc import ExecStub
 from flwr.simulation.run_simulation import _run_simulation
 
@@ -49,10 +55,22 @@ def run(
             case_sensitive=False, help="Use this flag to use the new SuperExec API"
         ),
     ] = False,
+    superexec_address: Annotated[
+        Optional[str],
+        typer.Option(case_sensitive=False, help="The address of the SuperExec server"),
+    ] = None,
+    app_path: Annotated[
+        Optional[Path],
+        typer.Option(case_sensitive=False, help="Path of the FAB to run"),
+    ] = None,
+    follow: Annotated[
+        bool,
+        typer.Option(case_sensitive=False, help="Use this flag to stream logs"),
+    ] = False,
 ) -> None:
     """Run Flower project."""
     if use_superexec:
-        _start_superexec_run()
+        _start_superexec_run(superexec_address, app_path, follow)
         return
 
     typer.secho("Loading project configuration... ", fg=typer.colors.BLUE)
@@ -102,7 +120,25 @@ def run(
         )
 
 
-def _start_superexec_run() -> None:
+def _start_superexec_run(
+    superexec_address: Optional[str],
+    app_path: Optional[Path],
+    follow: bool,
+) -> None:
+    if superexec_address is None:
+        gloabl_config = config_utils.load(get_flwr_dir() / "config.toml")
+        if gloabl_config:
+            superexec_address = gloabl_config["federation"]["default"]
+        else:
+            typer.secho(
+                "No SuperExec address was provided and no global config was found.",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+            sys.exit()
+
+    assert superexec_address is not None
+
     def on_channel_state_change(channel_connectivity: str) -> None:
         """Log channel connectivity."""
         log(DEBUG, channel_connectivity)
@@ -117,5 +153,13 @@ def _start_superexec_run() -> None:
     channel.subscribe(on_channel_state_change)
     stub = ExecStub(channel)
 
-    req = StartRunRequest()
-    stub.StartRun(req)
+    fab_path = build(app_path)
+
+    with open(fab_path, "rb") as f:
+        start_run_req = StartRunRequest(fab_file=f.read())
+    start_run_res = stub.StartRun(start_run_req)
+
+    if follow:
+        fetch_logs_req = FetchLogsRequest(run_id=start_run_res.run_id)
+        for res in stub.FetchLogs(fetch_logs_req):
+            print(res.log_output)
