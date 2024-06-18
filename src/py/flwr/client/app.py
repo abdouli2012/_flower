@@ -31,6 +31,7 @@ from flwr.common import GRPC_MAX_MESSAGE_LENGTH, EventType, Message, event
 from flwr.common.address import parse_address
 from flwr.common.constant import (
     MISSING_EXTRA_REST,
+    TRANSPORT_TIMEOUT_DEFAULT,
     TRANSPORT_TYPE_GRPC_BIDI,
     TRANSPORT_TYPE_GRPC_RERE,
     TRANSPORT_TYPE_REST,
@@ -76,6 +77,7 @@ def start_client(
     root_certificates: Optional[Union[bytes, str]] = None,
     insecure: Optional[bool] = None,
     transport: Optional[str] = None,
+    timeout: int = TRANSPORT_TIMEOUT_DEFAULT,
     authentication_keys: Optional[
         Tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey]
     ] = None,
@@ -114,6 +116,8 @@ def start_client(
         - 'grpc-bidi': gRPC, bidirectional streaming
         - 'grpc-rere': gRPC, request-response (experimental)
         - 'rest': HTTP (experimental)
+    timeout : int (default: 60)
+        A timeout (in seconds) for making requests to the server.
     max_retries: Optional[int] (default: None)
         The maximum number of times the client will try to connect to the
         server before giving up in case of a connection error. If set to None,
@@ -163,6 +167,7 @@ def start_client(
         root_certificates=root_certificates,
         insecure=insecure,
         transport=transport,
+        timeout=timeout,
         authentication_keys=authentication_keys,
         max_retries=max_retries,
         max_wait_time=max_wait_time,
@@ -184,6 +189,7 @@ def _start_client_internal(
     root_certificates: Optional[Union[bytes, str]] = None,
     insecure: Optional[bool] = None,
     transport: Optional[str] = None,
+    timeout: int = TRANSPORT_TIMEOUT_DEFAULT,
     authentication_keys: Optional[
         Tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey]
     ] = None,
@@ -224,6 +230,8 @@ def _start_client_internal(
         - 'grpc-bidi': gRPC, bidirectional streaming
         - 'grpc-rere': gRPC, request-response (experimental)
         - 'rest': HTTP (experimental)
+    timeout : int (default: 60)
+        A timeout (in seconds) for making requests to the server.
     max_retries: Optional[int] (default: None)
         The maximum number of times the client will try to connect to the
         server before giving up in case of a connection error. If set to None,
@@ -319,6 +327,7 @@ def _start_client_internal(
             retry_invoker,
             grpc_max_message_length,
             root_certificates,
+            timeout,
             authentication_keys,
         ) as conn:
             receive, send, create_node, delete_node, get_run = conn
@@ -457,6 +466,7 @@ def start_numpy_client(
     root_certificates: Optional[bytes] = None,
     insecure: Optional[bool] = None,
     transport: Optional[str] = None,
+    timeout: int = TRANSPORT_TIMEOUT_DEFAULT,
 ) -> None:
     """Start a Flower NumPyClient which connects to a gRPC server.
 
@@ -493,6 +503,8 @@ def start_numpy_client(
         - 'grpc-bidi': gRPC, bidirectional streaming
         - 'grpc-rere': gRPC, request-response (experimental)
         - 'rest': HTTP (experimental)
+    timeout : int (default: 60)
+        A timeout (in seconds) for making requests to the server.
 
     Examples
     --------
@@ -547,6 +559,7 @@ def start_numpy_client(
         root_certificates=root_certificates,
         insecure=insecure,
         transport=transport,
+        timeout=timeout,
     )
 
 
@@ -558,6 +571,7 @@ def _init_connection(transport: Optional[str], server_address: str) -> Tuple[
             RetryInvoker,
             int,
             Union[bytes, str, None],
+            int,
             Optional[Tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey]],
         ],
         ContextManager[

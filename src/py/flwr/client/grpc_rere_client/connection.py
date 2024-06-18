@@ -35,6 +35,7 @@ from flwr.common.constant import (
     PING_CALL_TIMEOUT,
     PING_DEFAULT_INTERVAL,
     PING_RANDOM_RANGE,
+    TRANSPORT_TIMEOUT_DEFAULT,
 )
 from flwr.common.grpc import create_channel
 from flwr.common.logger import log
@@ -69,6 +70,7 @@ def grpc_request_response(  # pylint: disable=R0913, R0914, R0915
     retry_invoker: RetryInvoker,
     max_message_length: int = GRPC_MAX_MESSAGE_LENGTH,  # pylint: disable=W0613
     root_certificates: Optional[Union[bytes, str]] = None,
+    timeout: int = TRANSPORT_TIMEOUT_DEFAULT,
     authentication_keys: Optional[
         Tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey]
     ] = None,
@@ -106,6 +108,8 @@ def grpc_request_response(  # pylint: disable=R0913, R0914, R0915
         Path of the root certificate. If provided, a secure
         connection using the certificates will be established to an SSL-enabled
         Flower server. Bytes won't work for the REST API.
+    timeout : int (default: 60)
+        A timeout (in seconds) for making requests to the server.
 
     Returns
     -------
@@ -175,6 +179,7 @@ def grpc_request_response(  # pylint: disable=R0913, R0914, R0915
         create_node_response = retry_invoker.invoke(
             stub.CreateNode,
             request=create_node_request,
+            timeout=timeout,
         )
 
         # Remember the node and the ping-loop thread
@@ -195,7 +200,11 @@ def grpc_request_response(  # pylint: disable=R0913, R0914, R0915
 
         # Call FleetAPI
         delete_node_request = DeleteNodeRequest(node=node)
-        retry_invoker.invoke(stub.DeleteNode, request=delete_node_request)
+        retry_invoker.invoke(
+            stub.DeleteNode,
+            request=delete_node_request,
+            timeout=timeout,
+        )
 
         # Cleanup
         node = None
@@ -209,7 +218,11 @@ def grpc_request_response(  # pylint: disable=R0913, R0914, R0915
 
         # Request instructions (task) from server
         request = PullTaskInsRequest(node=node)
-        response = retry_invoker.invoke(stub.PullTaskIns, request=request)
+        response = retry_invoker.invoke(
+            stub.PullTaskIns,
+            request=request,
+            timeout=timeout,
+        )
 
         # Get the current TaskIns
         task_ins: Optional[TaskIns] = get_task_ins(response)
@@ -254,7 +267,11 @@ def grpc_request_response(  # pylint: disable=R0913, R0914, R0915
 
         # Serialize ProtoBuf to bytes
         request = PushTaskResRequest(task_res_list=[task_res])
-        _ = retry_invoker.invoke(stub.PushTaskRes, request)
+        _ = retry_invoker.invoke(
+            stub.PushTaskRes,
+            request=request,
+            timeout=timeout,
+        )
 
         # Cleanup
         metadata = None

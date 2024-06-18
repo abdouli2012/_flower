@@ -34,7 +34,11 @@ from flwr.common import (
 )
 from flwr.common import recordset_compat as compat
 from flwr.common import serde
-from flwr.common.constant import MessageType, MessageTypeLegacy
+from flwr.common.constant import (
+    TRANSPORT_TIMEOUT_DEFAULT,
+    MessageType,
+    MessageTypeLegacy,
+)
 from flwr.common.grpc import create_channel
 from flwr.common.logger import log
 from flwr.common.retry_invoker import RetryInvoker
@@ -64,6 +68,7 @@ def grpc_connection(  # pylint: disable=R0913, R0915
     retry_invoker: RetryInvoker,  # pylint: disable=unused-argument
     max_message_length: int = GRPC_MAX_MESSAGE_LENGTH,
     root_certificates: Optional[Union[bytes, str]] = None,
+    timeout: int = TRANSPORT_TIMEOUT_DEFAULT,  # pylint: disable=unused-argument
     authentication_keys: Optional[  # pylint: disable=unused-argument
         Tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey]
     ] = None,
@@ -101,6 +106,8 @@ def grpc_connection(  # pylint: disable=R0913, R0915
         The PEM-encoded root certificates as a byte string or a path string.
         If provided, a secure connection using the certificates will be
         established to an SSL-enabled Flower server.
+    timeout : int (default: 60)
+        A timeout (in seconds) for making requests to the server.
 
     Returns
     -------

@@ -36,6 +36,7 @@ from flwr.common.constant import (
     PING_CALL_TIMEOUT,
     PING_DEFAULT_INTERVAL,
     PING_RANDOM_RANGE,
+    TRANSPORT_TIMEOUT_DEFAULT,
 )
 from flwr.common.logger import log
 from flwr.common.message import Message, Metadata
@@ -82,6 +83,7 @@ def http_request_response(  # pylint: disable=,R0913, R0914, R0915
     root_certificates: Optional[
         Union[bytes, str]
     ] = None,  # pylint: disable=unused-argument
+    timeout: int = TRANSPORT_TIMEOUT_DEFAULT,
     authentication_keys: Optional[  # pylint: disable=unused-argument
         Tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey]
     ] = None,
@@ -117,6 +119,8 @@ def http_request_response(  # pylint: disable=,R0913, R0914, R0915
         Path of the root certificate. If provided, a secure
         connection using the certificates will be established to an SSL-enabled
         Flower server. Bytes won't work for the REST API.
+    timeout : int (default: 60)
+        A timeout (in seconds) for making requests to the server.
 
     Returns
     -------
@@ -172,7 +176,7 @@ def http_request_response(  # pylint: disable=,R0913, R0914, R0915
                     "Content-Type": "application/protobuf",
                 },
                 verify=verify,
-                timeout=None,
+                timeout=timeout,
             )
 
         if retry:
