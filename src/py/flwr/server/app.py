@@ -284,7 +284,9 @@ def run_superlink() -> None:
                 "Client authentication enabled with %d known public keys",
                 len(client_public_keys),
             )
-            interceptors = [AuthenticateServerInterceptor(state)]
+            interceptors = [
+                AuthenticateServerInterceptor(state, Path(args.auth_list_public_keys))
+            ]
 
         fleet_server = _run_fleet_api_grpc_rere(
             address=fleet_address,
