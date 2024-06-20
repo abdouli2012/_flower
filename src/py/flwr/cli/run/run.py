@@ -17,7 +17,7 @@
 import sys
 from enum import Enum
 from logging import DEBUG
-from typing import Optional
+from typing import Dict, List, Optional, Union
 
 import typer
 from typing_extensions import Annotated
@@ -30,11 +30,30 @@ from flwr.proto.exec_pb2 import StartRunRequest  # pylint: disable=E0611
 from flwr.proto.exec_pb2_grpc import ExecStub
 from flwr.simulation.run_simulation import _run_simulation
 
+OverrideDict = Dict[str, Union[str, "OverrideDict"]]
+
 
 class Engine(str, Enum):
     """Enum defining the engine to run on."""
 
     SIMULATION = "simulation"
+
+
+def _parse_config_overrides(config_overrides: List[str]) -> OverrideDict:
+    """Parse the -c arguments and return the overrides as a dict."""
+    overrides: OverrideDict = {}
+    for conf_override in config_overrides:
+        key, value = conf_override.split("=")
+        keys = key.split(".")
+
+        # Update nested dictionary
+        d = overrides
+        for key in keys[:-1]:
+            if key not in d:
+                d[key] = {}
+        d[keys[-1]] = value
+
+    return overrides
 
 
 # pylint: disable-next=too-many-locals
@@ -44,6 +63,14 @@ def run(
         typer.Option(
             case_sensitive=False,
             help="The engine to run FL with (currently only simulation is supported).",
+        ),
+    ] = None,
+    config_overrides: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--config",
+            "-c",
+            help="Override configuration key-value pairs",
         ),
     ] = None,
     use_superexec: Annotated[
@@ -80,6 +107,15 @@ def run(
             bold=True,
         )
 
+    if config_overrides:
+        overrides = _parse_config_overrides(config_overrides)
+        for key, value in overrides.items():
+            keys = key.split(".")
+            for part in keys[:-1]:
+                if part not in config["flower"]:
+                    config["flower"][key] = {}
+            config["flower"][keys[-1]] = value
+
     typer.secho("Success", fg=typer.colors.GREEN)
 
     server_app_ref = config["flower"]["components"]["serverapp"]
@@ -89,7 +125,9 @@ def run(
         engine = config["flower"]["engine"]["name"]
 
     if engine == Engine.SIMULATION:
-        num_supernodes = config["flower"]["engine"]["simulation"]["supernode"]["num"]
+        num_supernodes = int(
+            config["flower"]["engine"]["simulation"]["supernode"]["num"]
+        )
 
         typer.secho("Starting run... ", fg=typer.colors.BLUE)
         _run_simulation(
