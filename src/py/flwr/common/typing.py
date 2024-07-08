@@ -44,6 +44,18 @@ Value = Union[
     List[int],
     List[str],
 ]
+ValueList = [
+    bool,
+    bytes,
+    float,
+    int,
+    str,
+    List[bool],
+    List[bytes],
+    List[float],
+    List[int],
+    List[str],
+]
 
 # Value types for common.MetricsRecord
 MetricsScalar = Union[int, float]
@@ -194,3 +206,4 @@ class Run:
     run_id: int
     fab_id: str
     fab_version: str
+    override_config: Dict[str, ConfigsRecordValues]
