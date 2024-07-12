@@ -22,6 +22,7 @@ from .inner_dirichlet_partitioner import InnerDirichletPartitioner
 from .linear_partitioner import LinearPartitioner
 from .natural_id_partitioner import NaturalIdPartitioner
 from .partitioner import Partitioner
+from .pathological_partitioner import PathologicalPartitioner
 from .semantic_partitioner import SemanticPartitioner
 from .shard_partitioner import ShardPartitioner
 from .size_partitioner import SizePartitioner
@@ -35,6 +36,7 @@ __all__ = [
     "LinearPartitioner",
     "NaturalIdPartitioner",
     "Partitioner",
+    "PathologicalPartitioner",
     "SemanticPartitioner",
     "ShardPartitioner",
     "SizePartitioner",
