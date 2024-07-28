@@ -14,7 +14,7 @@ Assuming `flwr` package is already installed on your system (check [here](https:
 We provide a single-line command to create a new project directory based on your selected challenge:
 
 ```shell
-flwr new --framework=flwrtune --username=your_flower_account
+flwr new --framework=FlowerTune --username=your_flower_account
 ```
 
 Then you will see a prompt to ask your project name and the choice of LLM challenges from the set of general NLP, finance, medical and code.
@@ -55,7 +55,12 @@ With a new project directory created, running a baseline challenge can be done b
 
 3. Run the challenge as indicated in the `Running the challenge` section in the `README.md`.
 
-## Evaluate pre-trained LLMs
+## Evaluate fine-tuned LLMs
 
-After the LLM fine-tuning finished, evaluate the performance of your pre-trained LLMs
-following the `README.md` in `evaluation` directory.
+After the LLM fine-tuning finished, evaluate the performance of your fine-tuned LLMs
+following the `README.md` in [`evaluation`](https://github.com/adap/flower/tree/main/benchmarks/flowertune-llm/evaluation) directory.
+
+
+If you have any questions about running FlowerTune LLM challenges or evaluation, 
+please feel free to make posts at [Flower Discuss](https://discuss.flower.ai) forum, 
+or join our [Slack channel](https://flower.ai/join-slack/) to ask questions in the `#flowertune-llm-leaderboard` channel.
