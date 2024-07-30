@@ -15,66 +15,55 @@ Like `quickstart-pytorch`, running this example in itself is also meant to be qu
 Start by cloning the example project. We prepared a single-line command that you can copy into your shell which will checkout the example for you:
 
 ```shell
-git clone --depth=1 https://github.com/adap/flower.git && mv flower/examples/quickstart-huggingface . && rm -rf flower && cd quickstart-huggingface
+git clone --depth=1 https://github.com/adap/flower.git _tmp \
+		&& mv _tmp/examples/quickstart-huggingface . \
+		&& rm -rf _tmp && cd quickstart-huggingface
 ```
 
 This will create a new directory called `quickstart-huggingface` containing the following files:
 
 ```shell
--- pyproject.toml
--- requirements.txt
--- client.py
--- server.py
--- README.md
+quickstart-huggingface
+├── README.md
+├── huggingface_example
+│   ├── __init__.py
+│   ├── client_app.py
+│   └── server_app.py
+└── pyproject.toml
 ```
 
 ### Installing Dependencies
 
-Project dependencies (such as `torch` and `flwr`) are defined in `pyproject.toml` and `requirements.txt`. We recommend [Poetry](https://python-poetry.org/docs/) to install those dependencies and manage your virtual environment ([Poetry installation](https://python-poetry.org/docs/#installation)) or [pip](https://pip.pypa.io/en/latest/development/), but feel free to use a different way of installing dependencies and managing virtual environments if you have other preferences.
-
-#### Poetry
-
-```shell
-poetry install
-poetry shell
-```
-
-Poetry will install all your dependencies in a newly created virtual environment. To verify that everything works correctly you can run the following command:
+Project dependencies are defined in `pyproject.toml`.
+You can install the dependencies by invoking `pip`:
 
 ```shell
-poetry run python3 -c "import flwr"
+# From a new python environment, run:
+pip install -e .
 ```
 
-If you don't see any errors you're good to go!
+## Run the Example
 
-#### pip
+You can run your `ClientApp` and `ServerApp` in both _simulation_ and
+_deployment_ mode without making changes to the code. If you are starting
+with Flower, we recommend you using the _simulation_ model as it requires
+fewer components to be launched manually. By default, `flwr run` will make
+use of the Simluation Engine. Refer to alternative ways of running your
+Flower application including Deployment, with TLS certificates, or with
+Docker later in this readme.
 
-Write the command below in your terminal to install the dependencies according to the configuration file requirements.txt.
+### Run with the Simulation Engine
 
-```shell
-pip install -r requirements.txt
+Run:
+
+```bash
+flwr run
 ```
 
-## Run Federated Learning with Flower
+You can also override some of the settings for your `ClientApp` and `ServerApp` defined in `pyproject.toml`. For example
 
-Afterwards you are ready to start the Flower server as well as the clients. You can simply start the server in a terminal as follows:
-
-```shell
-python3 server.py
+```bash
+flwr run --run-config 'num_server_rounds=5'
 ```
 
-Now you are ready to start the Flower clients which will participate in the learning. To do so simply open two more terminal windows and run the following commands.
-
-Start client 1 in the first terminal:
-
-```shell
-python3 client.py --partition-id 0
-```
-
-Start client 2 in the second terminal:
-
-```shell
-python3 client.py --partition-id 1
-```
-
-You will see that PyTorch is starting a federated training.
+### Alternative way of running the example
