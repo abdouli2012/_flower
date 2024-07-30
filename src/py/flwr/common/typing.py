@@ -198,4 +198,13 @@ class Run:
     run_id: int
     fab_id: str
     fab_version: str
+    fab_hash: str
     override_config: UserConfig
+
+
+@dataclass
+class Fab:
+    """Fab file representation."""
+
+    hash_str: str
+    data_bytes: bytes
