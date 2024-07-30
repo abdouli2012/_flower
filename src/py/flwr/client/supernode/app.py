@@ -19,6 +19,9 @@ import sys
 from logging import DEBUG, INFO, WARN
 from pathlib import Path
 from typing import Callable, Optional, Tuple
+import signal
+import os
+import subprocess
 
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -52,6 +55,12 @@ ADDRESS_FLEET_API_GRPC_RERE = "0.0.0.0:9092"
 def run_supernode() -> None:
     """Run Flower SuperNode."""
     log(INFO, "Starting Flower SuperNode")
+
+    def kill_handler(signum, frame) -> None:
+        sys.stdout.flush()
+        os.kill(os.getpid(), signal.SIGKILL)
+    signal.signal(signal.SIGINT, kill_handler)
+    signal.signal(signal.SIGTERM, kill_handler)
 
     event(EventType.RUN_SUPERNODE_ENTER)
 
